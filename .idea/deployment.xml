@@ -5,7 +5,7 @@
       <paths name="242">
         <serverdata>
           <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="/data/disk4/private/zhm/201904_BERT/dep" local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>

@@ -185,3 +185,4 @@ fabric.properties
 
 events.out.tfevents**
 *.zip
+glue_data/*
