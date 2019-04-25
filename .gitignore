@@ -186,3 +186,8 @@ fabric.properties
 events.out.tfevents**
 *.zip
 glue_data/*
+MRPC_output/*
+qe-2017/*
+SQUAD/*
+SQUAD_11_output/*
+XNLI_output/*
