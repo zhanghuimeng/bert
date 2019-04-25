@@ -559,7 +559,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
     elif mode == tf.estimator.ModeKeys.EVAL:
 
       def metric_fn(labels, predictions, is_real_example):
-        mse = tf.metrics.mean_squared_error(labels=labels, predictions=predictions, weights=is_real_example)
+        rmse = tf.metrics.root_mean_squared_error(labels=labels, predictions=predictions, weights=is_real_example)
         mae = tf.metrics.mean_absolute_error(labels=labels, predictions=predictions, weights=is_real_example)
         # Values of eval_metric_ops must be (metric_value, update_op) tuples
         # 这可很有趣……
@@ -568,7 +568,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
           predictions=predictions,
           weights=is_real_example)
         return {
-            "eval_mse": mse,
+            "eval_rmse": rmse,
             "eval_mae": mae,
             "eval_pearson": pearson
         }
@@ -765,7 +765,7 @@ def main(_):
       tf.logging.info("***** Predict results *****")
       for (i, prediction) in enumerate(result):
         predictions = prediction["predictions"]
-        output_line = "\t".join(str(predictions)) + "\n"
+        output_line = str(predictions) + "\n"
         writer.write(output_line)
         num_written_lines += 1
     assert num_written_lines == num_actual_predict_examples
