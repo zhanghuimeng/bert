@@ -236,7 +236,7 @@ class QESentProcessor(DataProcessor):
     tgt_lines = self._read_lines(os.path.join(data_dir, 'dev.mt'))
     scores = self._read_lines(os.path.join(data_dir, 'dev.hter'), True)
     examples = []
-    for (i, src, tgt, score) in enumerate(zip(src_lines, tgt_lines, scores)):
+    for (i, (src, tgt, score)) in enumerate(zip(src_lines, tgt_lines, scores)):
       guid = "dev-%d" % (i)
       text_a = tokenization.convert_to_unicode(src)
       text_b = tokenization.convert_to_unicode(tgt)
@@ -250,7 +250,7 @@ class QESentProcessor(DataProcessor):
     tgt_lines = self._read_lines(os.path.join(data_dir, 'test.mt'))
     scores = self._read_lines(os.path.join(data_dir, 'test.hter'), True)
     examples = []
-    for (i, src, tgt, score) in enumerate(zip(src_lines, tgt_lines, scores)):
+    for (i, (src, tgt, score)) in enumerate(zip(src_lines, tgt_lines, scores)):
       guid = "test-%d" % (i)
       text_a = tokenization.convert_to_unicode(src)
       text_b = tokenization.convert_to_unicode(tgt)
@@ -561,7 +561,9 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
       def metric_fn(labels, predictions, is_real_example):
         mse = tf.metrics.mean_squared_error(labels=labels, predictions=predictions, weights=is_real_example)
         mae = tf.metrics.mean_absolute_error(labels=labels, predictions=predictions, weights=is_real_example)
-        pearson, _ = tf.contrib.metrics.streaming_pearson_correlation(
+        # Values of eval_metric_ops must be (metric_value, update_op) tuples
+        # 这可很有趣……
+        pearson = tf.contrib.metrics.streaming_pearson_correlation(
           labels=labels,
           predictions=predictions,
           weights=is_real_example)
@@ -572,7 +574,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
         }
 
       eval_metrics = (metric_fn,
-                      [labels, predictions, is_real_example])
+                      [scores, predictions, is_real_example])
       output_spec = tf.contrib.tpu.TPUEstimatorSpec(
           mode=mode,
           loss=loss,

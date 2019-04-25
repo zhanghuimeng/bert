@@ -4,7 +4,7 @@ export QE_DIR=qe-2017
 export OUTPUT_DIR=QE2017_output
 python run_regression.py \
   --task_name=qe-sent \
-  --do_train=True \
+  --do_train=False \
   --do_eval=True \
   --do_predict=True \
   --data_dir=$QE_DIR \
