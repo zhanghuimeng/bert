@@ -168,13 +168,13 @@ class SquadExample(object):
                start_position=None,
                end_position=None,
                is_impossible=False):
-    self.qas_id = qas_id
-    self.question_text = question_text
-    self.doc_tokens = doc_tokens
-    self.orig_answer_text = orig_answer_text
-    self.start_position = start_position
-    self.end_position = end_position
-    self.is_impossible = is_impossible
+    self.qas_id = qas_id  # 问题id
+    self.question_text = question_text  # 问题的文本
+    self.doc_tokens = doc_tokens  # 文章token
+    self.orig_answer_text = orig_answer_text  # 正确答案的文本
+    self.start_position = start_position  # 正确答案在文章中起始位置
+    self.end_position = end_position  # 正确答案在文章中结束位置
+    self.is_impossible = is_impossible  # 文章中是否有答案
 
   def __str__(self):
     return self.__repr__()
@@ -226,6 +226,8 @@ class InputFeatures(object):
 
 def read_squad_examples(input_file, is_training):
   """Read a SQuAD json file into a list of SquadExample."""
+  # 这个函数是读train和eval example文件用的==
+  # 这个函数和普通的python read没什么区别
   with tf.gfile.Open(input_file, "r") as reader:
     input_data = json.load(reader)["data"]
 
@@ -235,12 +237,13 @@ def read_squad_examples(input_file, is_training):
     return False
 
   examples = []
-  for entry in input_data:
-    for paragraph in entry["paragraphs"]:
-      paragraph_text = paragraph["context"]
+  for entry in input_data:  # 对于输入数据中的每一篇文章
+    for paragraph in entry["paragraphs"]:  # 对于每一篇文章中的每一个段落
+      paragraph_text = paragraph["context"]  # 段落的text
       doc_tokens = []
       char_to_word_offset = []
       prev_is_whitespace = True
+      # 将段落tokenize，并记录每个char对应的是哪个token
       for c in paragraph_text:
         if is_whitespace(c):
           prev_is_whitespace = True
@@ -252,26 +255,26 @@ def read_squad_examples(input_file, is_training):
           prev_is_whitespace = False
         char_to_word_offset.append(len(doc_tokens) - 1)
 
-      for qa in paragraph["qas"]:
+      for qa in paragraph["qas"]: # 对于段落中的每一个QA
         qas_id = qa["id"]
         question_text = qa["question"]
         start_position = None
         end_position = None
         orig_answer_text = None
         is_impossible = False
+        # 判断文章中是否有答案（并找到答案的位置）
         if is_training:
-
           if FLAGS.version_2_with_negative:
             is_impossible = qa["is_impossible"]
           if (len(qa["answers"]) != 1) and (not is_impossible):
             raise ValueError(
                 "For training, each question should have exactly 1 answer.")
           if not is_impossible:
-            answer = qa["answers"][0]
+            answer = qa["answers"][0] # 只取第一个答案进行训练
             orig_answer_text = answer["text"]
             answer_offset = answer["answer_start"]
             answer_length = len(orig_answer_text)
-            start_position = char_to_word_offset[answer_offset]
+            start_position = char_to_word_offset[answer_offset] # 这里计算的是token pos
             end_position = char_to_word_offset[answer_offset + answer_length -
                                                1]
             # Only add answers where the text can be exactly recovered from the
@@ -293,6 +296,7 @@ def read_squad_examples(input_file, is_training):
             end_position = -1
             orig_answer_text = ""
 
+        # 因而创建了一个example，虽然看起来start_pos和end_pos不一定是最佳的
         example = SquadExample(
             qas_id=qas_id,
             question_text=question_text,
@@ -310,6 +314,8 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                                  doc_stride, max_query_length, is_training,
                                  output_fn):
   """Loads a data file into a list of `InputBatch`s."""
+  # 把读入的examples转成features（事实上，是对每个转出来的feature调用output_fn？）
+  # 需要一些特殊处理……
 
   unique_id = 1000000000
 
@@ -452,7 +458,7 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
           tf.logging.info("end_position: %d" % (end_position))
           tf.logging.info(
               "answer: %s" % (tokenization.printable_text(answer_text)))
-
+      # 总之，这里得到了一个feature
       feature = InputFeatures(
           unique_id=unique_id,
           example_index=example_index,
@@ -550,6 +556,7 @@ def _check_is_max_context(doc_spans, cur_span_index, position):
 def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
                  use_one_hot_embeddings):
   """Creates a classification model."""
+  # 所以input_ids和input_mask和token_type_ids都是tensor
   model = modeling.BertModel(
       config=bert_config,
       is_training=is_training,
@@ -557,14 +564,15 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
       input_mask=input_mask,
       token_type_ids=segment_ids,
       use_one_hot_embeddings=use_one_hot_embeddings)
-
+  # 大概是最后一个隐藏层内的权重，大小为batch_size*seq_length*hidden_size
   final_hidden = model.get_sequence_output()
 
   final_hidden_shape = modeling.get_shape_list(final_hidden, expected_rank=3)
   batch_size = final_hidden_shape[0]
   seq_length = final_hidden_shape[1]
   hidden_size = final_hidden_shape[2]
-
+  # 虽然我不是很懂为什么非要把权重拿出来，resize之后再乘上一个新的weight和bias……
+  # 我知道了，大概是因为需要两套logits处理开始和结束吧，这和模型内部没关系。
   output_weights = tf.get_variable(
       "cls/squad/output_weights", [2, hidden_size],
       initializer=tf.truncated_normal_initializer(stddev=0.02))
@@ -591,21 +599,22 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
                      num_train_steps, num_warmup_steps, use_tpu,
                      use_one_hot_embeddings):
   """Returns `model_fn` closure for TPUEstimator."""
-
+  # 有趣，我之前可能还没写过这样的东西……
   def model_fn(features, labels, mode, params):  # pylint: disable=unused-argument
     """The `model_fn` for TPUEstimator."""
-
+    # 这个输入features是啥。。。（大概只是输入数据的意思，而且已经batch成tensor了？）
+    # 以及为什么labels和params没用。。（因为这是model_fn函数的要求）
     tf.logging.info("*** Features ***")
     for name in sorted(features.keys()):
       tf.logging.info("  name = %s, shape = %s" % (name, features[name].shape))
-
+    # input_ids和input_mask和token_type_ids都是tensor
     unique_ids = features["unique_ids"]
     input_ids = features["input_ids"]
     input_mask = features["input_mask"]
     segment_ids = features["segment_ids"]
 
     is_training = (mode == tf.estimator.ModeKeys.TRAIN)
-
+    # 相当于得到了输入的输出logit
     (start_logits, end_logits) = create_model(
         bert_config=bert_config,
         is_training=is_training,
@@ -613,7 +622,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
         input_mask=input_mask,
         segment_ids=segment_ids,
         use_one_hot_embeddings=use_one_hot_embeddings)
-
+    # 下面一堆logging，虽然不是很懂，大概只是需要logging吧……
     tvars = tf.trainable_variables()
 
     initialized_variable_names = {}
@@ -638,7 +647,8 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
         init_string = ", *INIT_FROM_CKPT*"
       tf.logging.info("  name = %s, shape = %s%s", var.name, var.shape,
                       init_string)
-
+    # 然后现在要算loss了（一个算loss的函数，不过这个函数和闭包关系不大）
+    # 学习到了一种新的简化代码的方法……（写局部函数）
     output_spec = None
     if mode == tf.estimator.ModeKeys.TRAIN:
       seq_length = modeling.get_shape_list(input_ids)[1]
@@ -658,10 +668,10 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
       end_loss = compute_loss(end_logits, end_positions)
 
       total_loss = (start_loss + end_loss) / 2.0
-
+      # 这个optimization也是bert自己写的
       train_op = optimization.create_optimizer(
           total_loss, learning_rate, num_train_steps, num_warmup_steps, use_tpu)
-
+      # 然后它会创建一个spec（包括loss）并返回
       output_spec = tf.contrib.tpu.TPUEstimatorSpec(
           mode=mode,
           loss=total_loss,
@@ -675,7 +685,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
       }
       output_spec = tf.contrib.tpu.TPUEstimatorSpec(
           mode=mode, predictions=predictions, scaffold_fn=scaffold_fn)
-    else:
+    else:  # 没有实现EVAL
       raise ValueError(
           "Only TRAIN and PREDICT modes are supported: %s" % (mode))
 
@@ -686,6 +696,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
 
 def input_fn_builder(input_file, seq_length, is_training, drop_remainder):
   """Creates an `input_fn` closure to be passed to TPUEstimator."""
+  # 输入是TFRecord文件
 
   name_to_features = {
       "unique_ids": tf.FixedLenFeature([], tf.int64),
@@ -1066,6 +1077,7 @@ class FeatureWriter(object):
 
   def process_feature(self, feature):
     """Write a InputFeature to the TFRecordWriter as a tf.train.Example."""
+    # 这是转换出一个feature之后需要调用的函数，它会转换出TFRecord格式然后写到文件在
     self.num_features += 1
 
     def create_int_feature(values):
@@ -1125,13 +1137,13 @@ def validate_flags_or_throw(bert_config):
 
 def main(_):
   tf.logging.set_verbosity(tf.logging.INFO)
-
+  # 所以这边也定义了bert模型用来读入，很合理……
   bert_config = modeling.BertConfig.from_json_file(FLAGS.bert_config_file)
 
   validate_flags_or_throw(bert_config)
 
   tf.gfile.MakeDirs(FLAGS.output_dir)
-
+  # 这也是bert自己写的tokenization呢
   tokenizer = tokenization.FullTokenizer(
       vocab_file=FLAGS.vocab_file, do_lower_case=FLAGS.do_lower_case)
 
@@ -1139,7 +1151,7 @@ def main(_):
   if FLAGS.use_tpu and FLAGS.tpu_name:
     tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(
         FLAGS.tpu_name, zone=FLAGS.tpu_zone, project=FLAGS.gcp_project)
-
+  # 下面（即使不用TPU）好像是一些神奇的东西……
   is_per_host = tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2
   run_config = tf.contrib.tpu.RunConfig(
       cluster=tpu_cluster_resolver,
@@ -1165,7 +1177,8 @@ def main(_):
     # buffer in in the `input_fn`.
     rng = random.Random(12345)
     rng.shuffle(train_examples)
-
+  # 得到一个普通的model fn
+  # 我应该去学习estimator的写法了……
   model_fn = model_fn_builder(
       bert_config=bert_config,
       init_checkpoint=FLAGS.init_checkpoint,
@@ -1177,6 +1190,7 @@ def main(_):
 
   # If TPU is not available, this will fall back to normal Estimator on CPU
   # or GPU.
+  # 创建一个estimator
   estimator = tf.contrib.tpu.TPUEstimator(
       use_tpu=FLAGS.use_tpu,
       model_fn=model_fn,
@@ -1187,6 +1201,7 @@ def main(_):
   if FLAGS.do_train:
     # We write to a temporary file to avoid storing very large constant tensors
     # in memory.
+    # 所以是把输入重新转回文件去了
     train_writer = FeatureWriter(
         filename=os.path.join(FLAGS.output_dir, "train.tf_record"),
         is_training=True)
@@ -1215,6 +1230,7 @@ def main(_):
     estimator.train(input_fn=train_input_fn, max_steps=num_train_steps)
 
   if FLAGS.do_predict:
+    # 所以还要多读一些东西
     eval_examples = read_squad_examples(
         input_file=FLAGS.predict_file, is_training=False)
 
