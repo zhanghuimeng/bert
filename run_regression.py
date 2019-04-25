@@ -488,6 +488,7 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
 
     predictions = tf.matmul(output_layer, output_weights, transpose_b=True)
     predictions = tf.nn.bias_add(predictions, output_bias)
+    predictions = tf.reshape(predictions, [None])  # 注意形状的差别
     loss = tf.losses.mean_squared_error(labels=labels, predictions=predictions)
 
     return loss, predictions
