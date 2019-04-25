@@ -372,11 +372,15 @@ def file_based_convert_examples_to_features(
       f = tf.train.Feature(int64_list=tf.train.Int64List(value=list(values)))
       return f
 
+    def create_float_feature(values):
+      f = tf.train.Feature(float_list=tf.train.FloatList(value=list(values)))
+      return f
+
     features = collections.OrderedDict()
     features["input_ids"] = create_int_feature(feature.input_ids)
     features["input_mask"] = create_int_feature(feature.input_mask)
     features["segment_ids"] = create_int_feature(feature.segment_ids)
-    features["scores"] = create_int_feature([feature.score])  # 这个应该是单数还是复数呢
+    features["scores"] = create_float_feature([feature.score])  # 这个应该是单数还是复数呢
     features["is_real_example"] = create_int_feature(
         [int(feature.is_real_example)])
 
@@ -393,7 +397,7 @@ def file_based_input_fn_builder(input_file, seq_length, is_training,
       "input_ids": tf.FixedLenFeature([seq_length], tf.int64),
       "input_mask": tf.FixedLenFeature([seq_length], tf.int64),
       "segment_ids": tf.FixedLenFeature([seq_length], tf.int64),
-      "scores": tf.FixedLenFeature([], tf.float64),
+      "scores": tf.FixedLenFeature([], tf.float32),
       "is_real_example": tf.FixedLenFeature([], tf.int64),
   }
 
