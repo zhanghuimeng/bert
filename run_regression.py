@@ -692,8 +692,7 @@ def main(_):
       eval_batch_size=FLAGS.eval_batch_size,
       predict_batch_size=FLAGS.predict_batch_size)
 
-  # 所以这个只训练，不管eval的吗？？
-  if FLAGS.do_train:
+  if FLAGS.do_train and FLAGS.do_eval:
     train_file = os.path.join(FLAGS.output_dir, "train.tf_record")
     file_based_convert_examples_to_features(
         train_examples, FLAGS.max_seq_length, tokenizer, train_file)
@@ -708,7 +707,7 @@ def main(_):
         drop_remainder=True)
     # estimator.train(input_fn=train_input_fn, max_steps=num_train_steps)
     # 于是我改变了它的语义（train+eval）
-    train_spec = tf.estimator.TrainSpec(input_fn=train_input_fn, max_steps=num_train_steps)
+    # train_spec = tf.estimator.TrainSpec(input_fn=train_input_fn, max_steps=num_train_steps)
 
     # 所以要从这里开始eval了
     eval_examples = processor.get_dev_examples(FLAGS.data_dir)
@@ -743,11 +742,38 @@ def main(_):
 
     # 对于Estimator，暂时难以做到在多个数据集上eval
     # 因为每次它都会重新创建图
-    eval_spec = tf.estimator.EvalSpec(
-      input_fn=eval_input_fn,
-      steps=FLAGS.eval_steps
-    )
-    tf.estimator.train_and_evaluate(estimator=estimator, train_spec=train_spec, eval_spec=eval_spec)
+    # eval_spec = tf.estimator.EvalSpec(
+    #   input_fn=eval_input_fn,
+    #   steps=FLAGS.eval_steps
+    # )
+    # tf.estimator.train_and_evaluate(estimator=estimator, train_spec=train_spec, eval_spec=eval_spec)
+
+    step = 0
+    i = 0
+    while step < num_train_steps:
+      estimator.train(input_fn=train_input_fn, max_steps=FLAGS.eval_steps)
+      # 为了同时得到metric和predictions……
+      metric = estimator.evaluate(input_fn=eval_input_fn, steps=eval_steps, name="dev")
+      predictions = estimator.predict(input_fn=eval_input_fn)
+
+      def print(metric, predictions, name):
+        output_eval_file = os.path.join(FLAGS.output_dir, name + "_%d.txt" % i)
+        with tf.gfile.GFile(output_eval_file, "w") as writer:
+          tf.logging.info("***** Eval results *****")
+          for key in sorted(metric.keys()):
+            if not "predictions" in key:
+              tf.logging.info("  %s = %s", key, str(metric[key]))
+              writer.write("%s = %s\n" % (key, str(metric[key])))
+        output_eval_file = os.path.join(FLAGS.output_dir, name + "_%d.hter" % i)
+        with tf.gfile.GFile(output_eval_file, "w") as writer:
+          for prediction in predictions:
+            hter = prediction["predictions"]
+            output_line = str(hter) + "\n"
+            writer.write(output_line)
+
+      print(metric, predictions, "dev")
+      step += FLAGS.eval_steps
+      i += 1
 
   # 这个确实是考虑验证集……（但不是在训练过程中验证）
   # if FLAGS.do_eval:

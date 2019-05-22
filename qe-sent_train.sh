@@ -14,6 +14,8 @@ python run_regression.py \
   --init_checkpoint=$BERT_BASE_DIR/bert_model.ckpt \
   --train_batch_size=12 \
   --learning_rate=3e-5 \
+  --eval_steps=100 \
+  --save_checkpoints_steps 100 \
   --num_train_epochs=250.0 \
   --max_seq_length=256 \
   --do_lower_case=False \
