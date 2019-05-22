@@ -94,6 +94,9 @@ flags.DEFINE_float(
 flags.DEFINE_integer("save_checkpoints_steps", 1000,
                      "How often to save the model checkpoint.")
 
+flags.DEFINE_integer("eval_steps", 1000,
+                     "How often to evaluate the model.")
+
 flags.DEFINE_integer("iterations_per_loop", 1000,
                      "How many steps to make in each estimator call.")
 
@@ -246,9 +249,9 @@ class QESentProcessor(DataProcessor):
 
   def get_test_examples(self, data_dir):
     """See base class."""
-    src_lines = self._read_lines(os.path.join(data_dir, 'test.src'))
-    tgt_lines = self._read_lines(os.path.join(data_dir, 'test.mt'))
-    scores = self._read_lines(os.path.join(data_dir, 'test.hter'), True)
+    src_lines = self._read_lines(os.path.join(data_dir, 'test.2017.src'))
+    tgt_lines = self._read_lines(os.path.join(data_dir, 'test.2017.mt'))
+    scores = self._read_lines(os.path.join(data_dir, 'test.2017.hter'), True)
     examples = []
     for (i, (src, tgt, score)) in enumerate(zip(src_lines, tgt_lines, scores)):
       guid = "test-%d" % (i)
@@ -489,6 +492,7 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
     predictions = tf.matmul(output_layer, output_weights, transpose_b=True)
     predictions = tf.nn.bias_add(predictions, output_bias)
     predictions = tf.reshape(predictions, [-1])  # 注意形状的差别：prediction是[12,1]，label是[12]
+    # 这里的mse loss是自定义的。
     loss = tf.losses.mean_squared_error(labels=labels, predictions=predictions)
 
     return loss, predictions
@@ -518,9 +522,11 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
 
     is_training = (mode == tf.estimator.ModeKeys.TRAIN)
 
+    # 这里的loss和model已经加上自定义的部分了
     loss, predictions = create_model(
         bert_config, is_training, input_ids, input_mask, segment_ids, scores, use_one_hot_embeddings)
 
+    # 这段是读checkpoint，虽然不知道scaffold_fn是啥
     tvars = tf.trainable_variables()
     initialized_variable_names = {}
     scaffold_fn = None
@@ -537,6 +543,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
       else:
         tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
 
+    # 有时我也许应该控制一部分不进行训练
     tf.logging.info("**** Trainable Variables ****")
     for var in tvars:
       init_string = ""
@@ -545,6 +552,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
       tf.logging.info("  name = %s, shape = %s%s", var.name, var.shape,
                       init_string)
 
+    # 所以这个是叫model_fn，实际上可以进行训练/验证/测试……
     output_spec = None
     if mode == tf.estimator.ModeKeys.TRAIN:
 
@@ -559,20 +567,31 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
     elif mode == tf.estimator.ModeKeys.EVAL:
 
       def metric_fn(labels, predictions, is_real_example):
-        rmse = tf.metrics.root_mean_squared_error(labels=labels, predictions=predictions, weights=is_real_example)
-        mae = tf.metrics.mean_absolute_error(labels=labels, predictions=predictions, weights=is_real_example)
+        # 所以is_real_example大概只是说是不是用来padding的example吧
+        rmse = tf.metrics.root_mean_squared_error(
+          labels=labels,
+          predictions=predictions,
+          weights=is_real_example
+        )
+        mae = tf.metrics.mean_absolute_error(
+          labels=labels,
+          predictions=predictions,
+          weights=is_real_example
+        )
         # Values of eval_metric_ops must be (metric_value, update_op) tuples
         # 这可很有趣……
         pearson = tf.contrib.metrics.streaming_pearson_correlation(
           labels=labels,
           predictions=predictions,
-          weights=is_real_example)
+          weights=is_real_example
+        )
         return {
             "eval_rmse": rmse,
             "eval_mae": mae,
             "eval_pearson": pearson
         }
 
+      # 函数指针和函数参数……（真是搞不懂）
       eval_metrics = (metric_fn,
                       [scores, predictions, is_real_example])
       output_spec = tf.contrib.tpu.TPUEstimatorSpec(
@@ -605,6 +624,7 @@ def main(_):
 
   bert_config = modeling.BertConfig.from_json_file(FLAGS.bert_config_file)
 
+  # 当然也得GPU放得下才行
   if FLAGS.max_seq_length > bert_config.max_position_embeddings:
     raise ValueError(
         "Cannot use sequence length %d because the BERT model "
@@ -620,15 +640,18 @@ def main(_):
 
   processor = processors[task_name]()
 
+  # 这个我不管，让BERT自己搞去吧
   tokenizer = tokenization.FullTokenizer(
       vocab_file=FLAGS.vocab_file, do_lower_case=FLAGS.do_lower_case)
 
+  # 这都是啥（除了checkpoint以外）
   tpu_cluster_resolver = None
   if FLAGS.use_tpu and FLAGS.tpu_name:
     tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(
         FLAGS.tpu_name, zone=FLAGS.tpu_zone, project=FLAGS.gcp_project)
-
+  # 这又是啥
   is_per_host = tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2
+  # 这里可以设置600s的间隔，但代价是不能设steps（所以还是算了）
   run_config = tf.contrib.tpu.RunConfig(
       cluster=tpu_cluster_resolver,
       master=FLAGS.master,
@@ -648,6 +671,7 @@ def main(_):
         len(train_examples) / FLAGS.train_batch_size * FLAGS.num_train_epochs)
     num_warmup_steps = int(num_train_steps * FLAGS.warmup_proportion)
 
+  # 重点是整一个estimator能用的model_fn
   model_fn = model_fn_builder(
       bert_config=bert_config,
       init_checkpoint=FLAGS.init_checkpoint,
@@ -659,6 +683,7 @@ def main(_):
 
   # If TPU is not available, this will fall back to normal Estimator on CPU
   # or GPU.
+  # 我看到了eval/predict_batch_size，那么请问怎么让model_fn eval呢？
   estimator = tf.contrib.tpu.TPUEstimator(
       use_tpu=FLAGS.use_tpu,
       model_fn=model_fn,
@@ -667,6 +692,7 @@ def main(_):
       eval_batch_size=FLAGS.eval_batch_size,
       predict_batch_size=FLAGS.predict_batch_size)
 
+  # 所以这个只训练，不管eval的吗？？
   if FLAGS.do_train:
     train_file = os.path.join(FLAGS.output_dir, "train.tf_record")
     file_based_convert_examples_to_features(
@@ -680,9 +706,11 @@ def main(_):
         seq_length=FLAGS.max_seq_length,
         is_training=True,
         drop_remainder=True)
-    estimator.train(input_fn=train_input_fn, max_steps=num_train_steps)
+    # estimator.train(input_fn=train_input_fn, max_steps=num_train_steps)
+    # 于是我改变了它的语义（train+eval）
+    train_spec = tf.estimator.TrainSpec(input_fn=train_input_fn, max_steps=num_train_steps)
 
-  if FLAGS.do_eval:
+    # 所以要从这里开始eval了
     eval_examples = processor.get_dev_examples(FLAGS.data_dir)
     num_actual_eval_examples = len(eval_examples)
     if FLAGS.use_tpu:
@@ -697,12 +725,6 @@ def main(_):
     eval_file = os.path.join(FLAGS.output_dir, "eval.tf_record")
     file_based_convert_examples_to_features(
         eval_examples, FLAGS.max_seq_length, tokenizer, eval_file)
-
-    tf.logging.info("***** Running evaluation *****")
-    tf.logging.info("  Num examples = %d (%d actual, %d padding)",
-                    len(eval_examples), num_actual_eval_examples,
-                    len(eval_examples) - num_actual_eval_examples)
-    tf.logging.info("  Batch size = %d", FLAGS.eval_batch_size)
 
     # This tells the estimator to run through the entire set.
     eval_steps = None
@@ -719,15 +741,62 @@ def main(_):
         is_training=False,
         drop_remainder=eval_drop_remainder)
 
-    result = estimator.evaluate(input_fn=eval_input_fn, steps=eval_steps)
+    # 对于Estimator，暂时难以做到在多个数据集上eval
+    # 因为每次它都会重新创建图
+    eval_spec = tf.estimator.EvalSpec(
+      input_fn=eval_input_fn,
+      steps=FLAGS.eval_steps
+    )
+    tf.estimator.train_and_evaluate(estimator=estimator, train_spec=train_spec, eval_spec=eval_spec)
 
-    output_eval_file = os.path.join(FLAGS.output_dir, "eval_results.txt")
-    with tf.gfile.GFile(output_eval_file, "w") as writer:
-      tf.logging.info("***** Eval results *****")
-      for key in sorted(result.keys()):
-        tf.logging.info("  %s = %s", key, str(result[key]))
-        writer.write("%s = %s\n" % (key, str(result[key])))
+  # 这个确实是考虑验证集……（但不是在训练过程中验证）
+  # if FLAGS.do_eval:
+  #   eval_examples = processor.get_dev_examples(FLAGS.data_dir)
+  #   num_actual_eval_examples = len(eval_examples)
+  #   if FLAGS.use_tpu:
+  #     # TPU requires a fixed batch size for all batches, therefore the number
+  #     # of examples must be a multiple of the batch size, or else examples
+  #     # will get dropped. So we pad with fake examples which are ignored
+  #     # later on. These do NOT count towards the metric (all tf.metrics
+  #     # support a per-instance weight, and these get a weight of 0.0).
+  #     while len(eval_examples) % FLAGS.eval_batch_size != 0:
+  #       eval_examples.append(PaddingInputExample())
+  #
+  #   eval_file = os.path.join(FLAGS.output_dir, "eval.tf_record")
+  #   file_based_convert_examples_to_features(
+  #       eval_examples, FLAGS.max_seq_length, tokenizer, eval_file)
+  #
+  #   tf.logging.info("***** Running evaluation *****")
+  #   tf.logging.info("  Num examples = %d (%d actual, %d padding)",
+  #                   len(eval_examples), num_actual_eval_examples,
+  #                   len(eval_examples) - num_actual_eval_examples)
+  #   tf.logging.info("  Batch size = %d", FLAGS.eval_batch_size)
+  #
+  #   # This tells the estimator to run through the entire set.
+  #   eval_steps = None
+  #   # However, if running eval on the TPU, you will need to specify the
+  #   # number of steps.
+  #   if FLAGS.use_tpu:
+  #     assert len(eval_examples) % FLAGS.eval_batch_size == 0
+  #     eval_steps = int(len(eval_examples) // FLAGS.eval_batch_size)
+  #
+  #   eval_drop_remainder = True if FLAGS.use_tpu else False
+  #   eval_input_fn = file_based_input_fn_builder(
+  #       input_file=eval_file,
+  #       seq_length=FLAGS.max_seq_length,
+  #       is_training=False,
+  #       drop_remainder=eval_drop_remainder)
+  #
+  #   result = estimator.evaluate(input_fn=eval_input_fn, steps=eval_steps)
+  #
+  #   output_eval_file = os.path.join(FLAGS.output_dir, "eval_results.txt")
+  #   with tf.gfile.GFile(output_eval_file, "w") as writer:
+  #     tf.logging.info("***** Eval results *****")
+  #     for key in sorted(result.keys()):
+  #       tf.logging.info("  %s = %s", key, str(result[key]))
+  #       writer.write("%s = %s\n" % (key, str(result[key])))
 
+  # 这个就是在测试集没有答案的时候预测的吧（但是和验证集那套有什么关系……）
   if FLAGS.do_predict:
     predict_examples = processor.get_test_examples(FLAGS.data_dir)
     num_actual_predict_examples = len(predict_examples)
