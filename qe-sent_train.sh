@@ -16,7 +16,8 @@ python run_regression.py \
   --learning_rate=3e-5 \
   --eval_steps=1000 \
   --save_checkpoints_steps 1000 \
-  --num_train_epochs=2.5 \
+  --num_train_epochs=250 \
+  --early_stopping=10 \
   --max_seq_length=256 \
   --do_lower_case=False \
   --output_dir=$OUTPUT_DIR
