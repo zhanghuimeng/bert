@@ -1,7 +1,7 @@
 .idea/**/webServers.xml
 .idea/**/deployment.xml
-WMT17/*
-qe1/*
+WMT17/
+QE_RUN/**/
 
 # Initially taken from Github's Python gitignore file
 

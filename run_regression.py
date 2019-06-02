@@ -493,9 +493,13 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
     predictions = tf.nn.bias_add(predictions, output_bias)
     predictions = tf.reshape(predictions, [-1])  # 注意形状的差别：prediction是[12,1]，label是[12]
     # 这里的mse loss是自定义的。
-    loss = tf.losses.mean_squared_error(labels=labels, predictions=predictions)
+    # loss = tf.losses.mean_squared_error(labels=labels, predictions=predictions)
+    loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=predictions)
+    loss = tf.reduce_mean(loss)
 
-    return loss, predictions
+    # return loss, predictions
+    # 那么应该返回sigmoid
+    return loss, tf.sigmoid(predictions)
 
 
 def model_fn_builder(bert_config, init_checkpoint, learning_rate,
@@ -564,6 +568,9 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
           loss=loss,
           train_op=train_op,
           scaffold_fn=scaffold_fn)
+
+      # 会自动保存，不需要
+      # tf.summary.scalar("loss", loss)
     elif mode == tf.estimator.ModeKeys.EVAL:
 
       def metric_fn(labels, predictions, is_real_example):
@@ -585,6 +592,9 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
           predictions=predictions,
           weights=is_real_example
         )
+        tf.summary.scalar("rmse", rmse)
+        tf.summary.scalar("mae", mae)
+        tf.summary.scalar("pearson", pearson)
         return {
             "eval_rmse": rmse,
             "eval_mae": mae,
@@ -707,7 +717,7 @@ def main(_):
         drop_remainder=True)
     # estimator.train(input_fn=train_input_fn, max_steps=num_train_steps)
     # 于是我改变了它的语义（train+eval）
-    # train_spec = tf.estimator.TrainSpec(input_fn=train_input_fn, max_steps=num_train_steps)
+    train_spec = tf.estimator.TrainSpec(input_fn=train_input_fn, max_steps=num_train_steps)
 
     # 所以要从这里开始eval了
     eval_examples = processor.get_dev_examples(FLAGS.data_dir)
@@ -742,38 +752,13 @@ def main(_):
 
     # 对于Estimator，暂时难以做到在多个数据集上eval
     # 因为每次它都会重新创建图
-    # eval_spec = tf.estimator.EvalSpec(
-    #   input_fn=eval_input_fn,
-    #   steps=FLAGS.eval_steps
-    # )
-    # tf.estimator.train_and_evaluate(estimator=estimator, train_spec=train_spec, eval_spec=eval_spec)
-
-    step = 0
-    i = 0
-    while step < num_train_steps:
-      estimator.train(input_fn=train_input_fn, max_steps=FLAGS.eval_steps)
-      # 为了同时得到metric和predictions……
-      metric = estimator.evaluate(input_fn=eval_input_fn, steps=eval_steps, name="dev")
-      predictions = estimator.predict(input_fn=eval_input_fn)
-
-      def print(metric, predictions, name):
-        output_eval_file = os.path.join(FLAGS.output_dir, name + "_%d.txt" % i)
-        with tf.gfile.GFile(output_eval_file, "w") as writer:
-          tf.logging.info("***** Eval results *****")
-          for key in sorted(metric.keys()):
-            if not "predictions" in key:
-              tf.logging.info("  %s = %s", key, str(metric[key]))
-              writer.write("%s = %s\n" % (key, str(metric[key])))
-        output_eval_file = os.path.join(FLAGS.output_dir, name + "_%d.hter" % i)
-        with tf.gfile.GFile(output_eval_file, "w") as writer:
-          for prediction in predictions:
-            hter = prediction["predictions"]
-            output_line = str(hter) + "\n"
-            writer.write(output_line)
-
-      print(metric, predictions, "dev")
-      step += FLAGS.eval_steps
-      i += 1
+    # 否则它默认10min之内不重新eval……
+    eval_spec = tf.estimator.EvalSpec(
+      input_fn=eval_input_fn,
+      steps=FLAGS.eval_steps,
+      throttle_secs=120
+    )
+    tf.estimator.train_and_evaluate(estimator=estimator, train_spec=train_spec, eval_spec=eval_spec)
 
   # 这个确实是考虑验证集……（但不是在训练过程中验证）
   # if FLAGS.do_eval:
