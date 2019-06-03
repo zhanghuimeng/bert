@@ -18,6 +18,7 @@ python run_regression.py \
   --save_checkpoints_steps 1000 \
   --num_train_epochs=250 \
   --early_stopping=10 \
+  --loss_type=xent \
   --max_seq_length=256 \
   --do_lower_case=False \
   --output_dir=$OUTPUT_DIR

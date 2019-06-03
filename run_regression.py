@@ -89,6 +89,8 @@ flags.DEFINE_float("num_train_epochs", 3.0,
 flags.DEFINE_integer("early_stopping", 10,
                      "")
 
+flags.DEFINE_string("loss_type", "mse", "The type of loss function to use.")
+
 flags.DEFINE_float(
     "warmup_proportion", 0.1,
     "Proportion of training to perform linear learning rate warmup for. "
@@ -495,14 +497,20 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids,
     predictions = tf.matmul(output_layer, output_weights, transpose_b=True)
     predictions = tf.nn.bias_add(predictions, output_bias)
     predictions = tf.reshape(predictions, [-1])  # 注意形状的差别：prediction是[12,1]，label是[12]
-    # 这里的mse loss是自定义的。
-    # loss = tf.losses.mean_squared_error(labels=labels, predictions=predictions)
-    loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=predictions)
-    loss = tf.reduce_mean(loss)
+    # 这里的loss是自定义的。
+    if FLAGS.loss_type == "mse":
+      loss = tf.losses.mean_squared_error(labels=labels, predictions=predictions)
+    elif FLAGS.loss_type == "xent":
+      loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=predictions)
+      loss = tf.reduce_mean(loss)
+      predictions = tf.sigmoid(predictions)
+    else:
+      tf.logging.error("Unknown loss type %s" % FLAGS.loss_type)
+      exit(-1)
 
     # return loss, predictions
     # 那么应该返回sigmoid
-    return loss, tf.sigmoid(predictions)
+    return loss, predictions
 
 
 def model_fn_builder(bert_config, init_checkpoint, learning_rate,
