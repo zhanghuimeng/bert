@@ -13,10 +13,10 @@ python run_regression.py \
   --bert_config_file=$BERT_BASE_DIR/bert_config.json \
   --init_checkpoint=$BERT_BASE_DIR/bert_model.ckpt \
   --train_batch_size=12 \
-  --learning_rate=3e-5 \
+  --learning_rate=1e-5 \
   --eval_steps=1000 \
   --save_checkpoints_steps 1000 \
-  --num_train_epochs=250 \
+  --num_train_epochs=60 \
   --early_stopping=10 \
   --max_seq_length=256 \
   --do_lower_case=False \
