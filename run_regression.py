@@ -768,6 +768,15 @@ def main(_):
       is_training=False,
       drop_remainder=test_drop_remainder)
 
+    train_spec = tf.estimator.TrainSpec(input_fn=train_input_fn, max_steps=num_train_steps)
+    eval_spec = tf.estimator.EvalSpec(
+      input_fn=dev_input_fn,
+      steps=FLAGS.eval_steps,
+      throttle_secs=120
+    )
+    tf.estimator.train_and_evaluate(estimator=estimator, train_spec=train_spec, eval_spec=eval_spec)
+
+    '''
     step = 0
     max_pearson = -1
     cnt = 0
@@ -827,6 +836,7 @@ def main(_):
       if cnt >= FLAGS.early_stopping:
         tf.logging.info("Performing early stopping...")
         break
+      '''
 
 
 if __name__ == "__main__":
