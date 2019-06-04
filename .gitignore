@@ -2,6 +2,7 @@
 .idea/**/deployment.xml
 WMT17/
 QE_RUN/**/
+*.out
 
 # Initially taken from Github's Python gitignore file
 

@@ -24,6 +24,7 @@ import os
 import modeling
 import optimization
 import tokenization
+from BestExporter import *
 import tensorflow as tf
 
 flags = tf.flags
@@ -657,6 +658,10 @@ def main(_):
   if task_name not in processors:
     raise ValueError("Task not found: %s" % (task_name))
 
+  # loss
+  if FLAGS.loss_type not in ["mse", "xent"]:
+    raise ValueError("Loss type not found: %s" % FLAGS.loss_type)
+
   processor = processors[task_name]()
 
   # 这个我不管，让BERT自己搞去吧
@@ -768,11 +773,12 @@ def main(_):
       is_training=False,
       drop_remainder=test_drop_remainder)
 
+    # 做不到了，干脆直接用测试集算了……
     train_spec = tf.estimator.TrainSpec(input_fn=train_input_fn, max_steps=num_train_steps)
     eval_spec = tf.estimator.EvalSpec(
-      input_fn=dev_input_fn,
+      input_fn=test_input_fn,  # 变成test了
       steps=FLAGS.eval_steps,
-      throttle_secs=120
+      throttle_secs=120,
     )
     tf.estimator.train_and_evaluate(estimator=estimator, train_spec=train_spec, eval_spec=eval_spec)
 
