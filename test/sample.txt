@@ -1,0 +1,8 @@
+We are releasing code to do "masked LM" and "next sentence prediction" on an arbitrary text corpus.
+Note that this is not the exact code that was used for the paper.
+But this code does generate pre-training data as described in the paper.
+Here's how to run the data generation.
+The input is a plain text file, with one sentence per line.
+It is important that these be actual sentences for the "next sentence prediction" task.
+Documents are delimited by empty lines.
+The output is a set of tf.train.Examples serialized into TFRecord file format.
