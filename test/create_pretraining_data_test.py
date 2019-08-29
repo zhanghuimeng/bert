@@ -18,6 +18,9 @@ class TestCreateTrainingInstances(unittest.TestCase):
     MASKED_LM_PROB = 0.15
     MAX_PREDICTIONS_PER_SEQ = 20
 
+    flags = tf.flags
+    FLAGS = flags.FLAGS
+
     def test_read(self):
         tokenizer = tokenization.FullTokenizer(
             vocab_file=self.VOCAB_FILE, do_lower_case=True)
@@ -31,6 +34,8 @@ class TestCreateTrainingInstances(unittest.TestCase):
             tf.logging.info("  %s", input_file)
 
         rng = random.Random(12345)  # random seed
+        # need to set FLAGS.do_whole_word_mask
+        self.FLAGS.do_whole_word_mask = True
         instances = create_training_instances(
             input_files, tokenizer, self.MAX_SEQ_LENGTH, self.DUPE_FACTOR,
             self.SHORT_SEQ_PROB, self.MASKED_LM_PROB, self.MAX_PREDICTIONS_PER_SEQ,
@@ -59,17 +64,28 @@ class TestCreateMaskedLmPredictions(unittest.TestCase):
         'lines', '.', 'the', 'output', 'is', 'a', 'set', 'of', 't', '##f', '.',
         'train', '.', 'examples', 'serial', '##ized', 'into', 't', '##fre',
         '##cor', '##d', '[SEP]']
+    flags = tf.flags
+    FLAGS = flags.FLAGS
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tokenizer = tokenization.FullTokenizer(
+            vocab_file=cls.VOCAB_FILE, do_lower_case=True)
+        cls.vocab_words = list(cls.tokenizer.vocab.keys())
+        cls.rng = random.Random(12345)  # random seed
+        cls.FLAGS.do_whole_word_mask = True
 
     def test_normal(self):
-        tokenizer = tokenization.FullTokenizer(
-            vocab_file=self.VOCAB_FILE, do_lower_case=True)
-        vocab_words = list(tokenizer.vocab.keys())
-        rng = random.Random(12345)  # random seed
+        # tokenizer = tokenization.FullTokenizer(
+        #     vocab_file=self.VOCAB_FILE, do_lower_case=True)
+        # vocab_words = list(tokenizer.vocab.keys())
+        # rng = random.Random(12345)  # random seed
+        # self.FLAGS.do_whole_word_mask = True
 
         (tokens, masked_lm_positions,
          masked_lm_labels) = create_masked_lm_predictions(
             self.TOKEN_SAMPLE, self.MASKED_LM_PROB, self.MAX_PREDICTIONS_PER_SEQ,
-            vocab_words, rng)
+            self.vocab_words, self.rng, "normal")
         # segment_ids and is_random_next is dumb
         instance = TrainingInstance(
             tokens=tokens,
@@ -77,7 +93,31 @@ class TestCreateMaskedLmPredictions(unittest.TestCase):
             is_random_next=True,
             masked_lm_positions=masked_lm_positions,
             masked_lm_labels=masked_lm_labels)
+        print("Test normal")
         print(instance)
+
+    def test_front_half(self):
+        (tokens, masked_lm_positions,
+         masked_lm_labels) = create_masked_lm_predictions(
+            self.TOKEN_SAMPLE, self.MASKED_LM_PROB, self.MAX_PREDICTIONS_PER_SEQ,
+            self.vocab_words, self.rng, "front-half")
+        n = len(tokens)
+        for pos in masked_lm_positions:
+            if tokens[pos] == "[MASK]":
+                continue
+            self.assertLess(pos, 0.5 * n)
+
+        # segment_ids and is_random_next is dumb
+        instance = TrainingInstance(
+            tokens=tokens,
+            segment_ids=[0],
+            is_random_next=True,
+            masked_lm_positions=masked_lm_positions,
+            masked_lm_labels=masked_lm_labels)
+        print("Test front-half")
+        print(instance)
+
+    # TODO: back-half, middle, odd, even
 
 
 if __name__ == '__main__':

@@ -340,7 +340,8 @@ MaskedLmInstance = collections.namedtuple("MaskedLmInstance",
 
 
 def create_masked_lm_predictions(tokens, masked_lm_prob,
-                                 max_predictions_per_seq, vocab_words, rng):
+                                 max_predictions_per_seq, vocab_words, rng,
+                                 mask_pos_type="normal"):
   """Creates the predictions for the masked LM objective."""
 
   cand_indexes = []
@@ -361,6 +362,37 @@ def create_masked_lm_predictions(tokens, masked_lm_prob,
       cand_indexes[-1].append(i)
     else:
       cand_indexes.append([i])
+
+  # 在这里处理一下cand_index
+  new_cand_indexes = []
+  n = len(tokens)
+  if mask_pos_type == "front-half":
+    for cand in cand_indexes:
+      if cand[-1] < 0.5 * n:
+        new_cand_indexes.append(cand)
+      else:
+        break
+    cand_indexes = new_cand_indexes
+  elif mask_pos_type == "back-half":
+    for cand in cand_indexes:
+      if 0.5 * n <= cand[0]:
+        new_cand_indexes.append(cand)
+    cand_indexes = new_cand_indexes
+  elif mask_pos_type == "middle":
+    for cand in cand_indexes:
+      if 0.25 * n < cand[0] and cand[-1] <= 0.75 * n:
+        new_cand_indexes.append(cand)
+    cand_indexes = new_cand_indexes
+  elif mask_pos_type == "odd":
+    for cand in cand_indexes:
+      if cand[0] % 2 == 1:
+        new_cand_indexes.append(cand)
+    cand_indexes = new_cand_indexes
+  elif mask_pos_type == "even":
+    for cand in cand_indexes:
+      if cand[0] % 2 == 0:
+        new_cand_indexes.append(cand)
+    cand_indexes = new_cand_indexes
 
   rng.shuffle(cand_indexes)
 
