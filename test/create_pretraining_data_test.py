@@ -1,6 +1,7 @@
 import unittest
 import tensorflow as tf
 import random
+import os
 
 import tokenization
 from create_pretraining_data import create_training_instances
@@ -119,6 +120,17 @@ class TestCreateMaskedLmPredictions(unittest.TestCase):
 
     # TODO: back-half, middle, odd, even
 
+
+class TestMain(unittest.TestCase):
+    VOCAB_FILE = "vocab.txt"
+
+    def test_main(self):
+        result = os.system(
+            "python ../create_pretraining_data.py "
+            "--input_file=./sample.txt "
+            "--output_file=./tf_examples.tfrecord "
+            "--vocab_file=./vocab.txt")
+        self.assertEqual(result, 0)
 
 if __name__ == '__main__':
     unittest.main()

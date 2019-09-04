@@ -64,6 +64,10 @@ flags.DEFINE_float(
     "Probability of creating sequences which are shorter than the "
     "maximum length.")
 
+flags.DEFINE_string(
+    "mask_pos_type", "normal",
+    "Places to put the masks. Values: normal, front-half, back-half, middle,"
+    "odd, even.")
 
 class TrainingInstance(object):
   """A single training instance (sentence pair)."""
@@ -320,7 +324,8 @@ def create_instances_from_document(
 
         (tokens, masked_lm_positions,
          masked_lm_labels) = create_masked_lm_predictions(
-             tokens, masked_lm_prob, max_predictions_per_seq, vocab_words, rng)
+             tokens, masked_lm_prob, max_predictions_per_seq, vocab_words, rng,
+             FLAGS.mask_pos_type)
         instance = TrainingInstance(
             tokens=tokens,
             segment_ids=segment_ids,
